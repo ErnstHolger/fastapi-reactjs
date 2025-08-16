@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__filesystem__read_text_file",
+      "mcp__filesystem__list_directory",
+      "Bash(npx:*)",
+      "mcp__filesystem__write_file",
+      "mcp__filesystem__edit_file",
+      "mcp__filesystem__create_directory",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm start)",
+      "mcp__filesystem__directory_tree"
+    ],
+    "deny": []
+  }
+}

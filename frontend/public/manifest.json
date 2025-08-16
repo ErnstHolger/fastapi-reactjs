@@ -1,0 +1,30 @@
+{
+  "short_name": "Analytics Dashboard",
+  "name": "Analytics Dashboard - Real-time Data Visualization",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "dashboard-icon-32.svg", 
+      "sizes": "32x32",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "icon-192.svg",
+      "type": "image/svg+xml", 
+      "sizes": "192x192"
+    },
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#03a9f4",
+  "background_color": "#ffffff"
+}

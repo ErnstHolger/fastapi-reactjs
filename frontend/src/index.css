@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Main colors */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 19%; /* Dark gray */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 19%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 19%;
+    
+    /* Brand colors */
+    --primary: 225 89% 38%; /* #1039b6 Blue */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 122 39% 49%; /* #4CAF50 Green */
+    --secondary-foreground: 0 0% 100%;
+    --accent: 36 100% 50%; /* #FF9800 Orange */
+    --accent-foreground: 0 0% 100%;
+    
+    /* Status colors */
+    --positive: 122 41% 45%; /* #43A047 Success green */
+    --negative: 4 70% 50%; /* #D32F2F Error red */
+    --info: 199 91% 56%; /* #29B6F6 Info blue */
+    --warning: 54 100% 59%; /* #FFEB3B Warning yellow */
+    
+    /* Additional brand colors */
+    --brand1: 262 52% 47%; /* #673ab7 Deep purple */
+    --brand2: 225 89% 38%; /* #1039b6 Brand blue (same as primary) */
+    
+    /* UI colors */
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --destructive: 4 70% 50%; /* Using negative color */
+    --destructive-foreground: 0 0% 100%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 225 89% 38%; /* Using primary color */
+    --radius: 0.5rem;
+    
+    /* Chart-specific colors */
+    --chart-1: 225 89% 38%; /* Primary blue */
+    --chart-2: 122 39% 49%; /* Secondary green */
+    --chart-3: 36 100% 50%; /* Accent orange */
+    --chart-4: 262 52% 47%; /* Brand1 purple */
+    --chart-5: 199 91% 56%; /* Info blue */
+    --chart-6: 122 41% 45%; /* Positive green */
+    --chart-7: 4 70% 50%; /* Negative red */
+    --chart-8: 54 100% 59%; /* Warning yellow */
+  }
+
+  .dark {
+    /* Dark theme backgrounds */
+    --background: 0 0% 13%; /* #212121 Page background */
+    --foreground: 0 0% 95%;
+    --card: 0 0% 19%; /* #303030 Dark gray */
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 19%;
+    --popover-foreground: 0 0% 95%;
+    
+    /* Brand colors (same in dark mode) */
+    --primary: 225 89% 38%; /* #1039b6 Blue */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 122 39% 49%; /* #4CAF50 Green */
+    --secondary-foreground: 0 0% 100%;
+    --accent: 36 100% 50%; /* #FF9800 Orange */
+    --accent-foreground: 0 0% 19%;
+    
+    /* Status colors (same in dark mode) */
+    --positive: 122 41% 45%; /* #43A047 Success green */
+    --negative: 4 70% 50%; /* #D32F2F Error red */
+    --info: 199 91% 56%; /* #29B6F6 Info blue */
+    --warning: 54 100% 59%; /* #FFEB3B Warning yellow */
+    
+    /* Additional brand colors */
+    --brand1: 262 52% 47%; /* #673ab7 Deep purple */
+    --brand2: 225 89% 38%; /* #1039b6 Brand blue */
+    
+    /* UI colors for dark mode */
+    --muted: 0 0% 19%;
+    --muted-foreground: 0 0% 65%;
+    --destructive: 4 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 24%;
+    --input: 0 0% 24%;
+    --ring: 225 89% 38%;
+    
+    /* Chart colors (same as light mode) */
+    --chart-1: 225 89% 38%;
+    --chart-2: 122 39% 49%;
+    --chart-3: 36 100% 50%;
+    --chart-4: 262 52% 47%;
+    --chart-5: 199 91% 56%;
+    --chart-6: 122 41% 45%;
+    --chart-7: 4 70% 50%;
+    --chart-8: 54 100% 59%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
