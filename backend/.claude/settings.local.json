@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ruff check:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(mkdir:*)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install pytest pytest-asyncio httpx)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest --version)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/ -v)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install python-dotenv)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_main.py::test_root -v)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install fastapi)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_main.py::test_health_check -v)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install adh_sample_library_preview)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/ -m unit -v)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__filesystem__create_directory",
+      "mcp__filesystem__write_file",
+      "mcp__filesystem__directory_tree",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__read_multiple_files",
+      "mcp__filesystem__read_text_file"
+    ],
+    "deny": []
+  }
+}

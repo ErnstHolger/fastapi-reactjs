@@ -1,10 +1,16 @@
+# General
+
+
 # Backend
-backend/venv/
+backend/.vscode/
+backend/.venv/
 backend/__pycache__/
 backend/*.pyc
 backend/.env
-
+backend/.pytest_cache/
+backend/.ruff_cache/
 # Frontend
+frontend/.claude/
 frontend/node_modules/
 frontend/build/
 frontend/.env.local
