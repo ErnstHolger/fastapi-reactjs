@@ -19,12 +19,16 @@ from pydantic import BaseModel
 
 from .client import NAMESPACE_ID, get_adh_client
 
-ML_MODEL_TYPE_ID = "model_forecast"
-ML_MODEL_TYPE_NAME = "model_forecast"
+ML_MODEL_TYPE_ID = "model_forecast_double"
+ML_MODEL_TYPE_NAME = "model_forecast_double"
 ML_MODEL_TYPE_DESCRIPTION = "Data Model for Forecast"
 ML_MODEL_ASSET_TYPE_QUERY = "AssetTypeId:Forecast"
 # DEFAULT_MODEL_TYPE = "LinearRegressionModel"
 ML_FORECAST_MODEL_ID = "Forecast"
+
+
+def create_meta_dict(items: Dict, id: str, type: SdsTypeCode, value=None):
+    items[id] = create_meta(id, type, value)
 
 
 def create_meta(id: str, type: SdsTypeCode, value=None):
@@ -49,7 +53,7 @@ def add_references(references: List, additions: List, prefix: str):
     for i in range(len(additions)):
         stream = client.Streams.getStream(NAMESPACE_ID, additions[i])
         stream_reference = StreamReference(
-            f"{prefix}_{i}", stream.Name, stream.Id, stream.Description
+            stream.Id, stream.Name, stream.Id, stream.Description
         )
         references.append(stream_reference)
 
@@ -60,22 +64,42 @@ def create_ml_forecast_type() -> AssetType:
     asset_type = AssetType(
         ML_FORECAST_MODEL_ID, "Forecast", "Base model for ML timeseries forecast"
     )
+
     metadata = [
         create_meta("model_type", SdsTypeCode.String, ""),
-        create_meta("sampling_rate", SdsTypeCode.Int64, 0),
-        create_meta("training_horizon", SdsTypeCode.Int64, 0),
-        create_meta("past_covariates", SdsTypeCode.String, ""),
+        create_meta("interval", SdsTypeCode.Int64, 0),
+        create_meta("past", SdsTypeCode.String, ""),
         create_meta("target", SdsTypeCode.String, ""),
-        create_meta("future_covariates", SdsTypeCode.String, ""),
+        create_meta("future", SdsTypeCode.String, ""),
         create_meta("status", SdsTypeCode.String, ""),
-        create_meta("forecast_horizon", SdsTypeCode.Int64, 0),
-        create_meta("update_frequency", SdsTypeCode.Int64, 0),
-        create_meta("retrain_frequency", SdsTypeCode.Int64, 0),
+        create_meta("lag", SdsTypeCode.Int64, 0),
+        create_meta("lead", SdsTypeCode.Int64, 0),
+        create_meta("update", SdsTypeCode.String, ""),
+        create_meta("retrain", SdsTypeCode.String, ""),
     ]
     asset_type.Metadata = metadata
     asset_type = client.AssetTypes.createOrUpdateAssetType(NAMESPACE_ID, asset_type)
 
     return asset_type
+
+
+def create_ml_double_type():
+    """Create ML forecasting type with predefined structure."""
+    client = get_adh_client()
+    time_type = SdsType("string", SdsTypeCode.DateTime)
+    double_type = SdsType("doubleType", SdsTypeCode.Double)
+
+    # Define properties for basic forecasting
+    timestamp = SdsTypeProperty("Timestamp", True, time_type)
+    value = SdsTypeProperty("Value", False, double_type)
+    ml_type = SdsType(
+        ML_MODEL_TYPE_ID,
+        SdsTypeCode.Object,
+        [timestamp, value],
+        ML_MODEL_TYPE_NAME,
+        ML_MODEL_TYPE_DESCRIPTION,
+    )
+    return client.Types.getOrCreateType(NAMESPACE_ID, ml_type)
 
 
 def create_ml_type():
@@ -106,55 +130,68 @@ def create_ml_asset(
     name: str,
     description: str,
     model_type: str,
-    sampling_rate: int,
-    past_covariates: List[str],
+    interval: int,
+    past: List[str],
     target: List[str],
-    future_covariates: List[str],
+    future: List[str],
     status: List[str],
-    training_horizon: int,
-    forecast_horizon: int,
-    update_frequency: int,
-    retrain_frequency: int,
+    lag: int,
+    lead: int,
+    update: str,
+    retrain: str,
 ):
     client = get_adh_client()
+    # Ensure unique stream references
+    unique = set()
+    for vars in [target, future, past, status]:
+        tmp = []
+        for var in vars:
+            if var in unique:
+                continue
+            tmp.append(var)
+            unique.add(var)
+        vars.clear()
+        vars.extend(tmp)
+
     metadata = [
         create_meta("model_type", SdsTypeCode.String, model_type),
-        create_meta("sampling_rate", SdsTypeCode.Int64, sampling_rate),
-        create_meta(
-            "past_covariates", SdsTypeCode.String, list2string(past_covariates)
-        ),
+        create_meta("interval", SdsTypeCode.Int64, interval),
+        create_meta("past", SdsTypeCode.String, list2string(past)),
         create_meta("target", SdsTypeCode.String, list2string(target)),
-        create_meta(
-            "future_covariates", SdsTypeCode.String, list2string(future_covariates)
-        ),
+        create_meta("future", SdsTypeCode.String, list2string(future)),
         create_meta("status", SdsTypeCode.String, list2string(status)),
-        create_meta("training_horizon", SdsTypeCode.Int64, training_horizon),
-        create_meta("forecast_horizon", SdsTypeCode.Int64, forecast_horizon),
-        create_meta("update_frequency", SdsTypeCode.Int64, update_frequency),
-        create_meta("retrain_frequency", SdsTypeCode.Int64, retrain_frequency),
+        create_meta("lag", SdsTypeCode.Int64, lag),
+        create_meta("lead", SdsTypeCode.Int64, lead),
+        create_meta("update", SdsTypeCode.String, update),
+        create_meta("retrain", SdsTypeCode.String, retrain),
     ]
-    ml_type = create_ml_type()
-    asset_type = create_ml_forecast_type()
-    # Create stream
-    stream_id = f"{id}_stream"
-    ml_stream = SdsStream(
-        stream_id,
-        ml_type.Id,
-        "ML Stream",
-        "ML Stream",
-        interpolation_mode=SdsInterpolationMode.Continuous,
-        extrapolation_mode=SdsExtrapolationMode.All,
-    )
     stream_references = []
-    add_references(stream_references, past_covariates, f"past_covariates_{id}_")
-    add_references(stream_references, target, f"target_{id}_")
-    add_references(stream_references, future_covariates, f"future_covariates_{id}_")
-    add_references(stream_references, status, f"status_{id}_")
-    ml_stream = client.Streams.getOrCreateStream(NAMESPACE_ID, ml_stream)
-    stream_reference = StreamReference(
-        "result", ml_stream.Name, ml_stream.Id, ml_stream.Description
-    )
-    stream_references.append(stream_reference)
+
+    add_references(stream_references, target, f"target_{id}")
+    add_references(stream_references, future, f"future_{id}")
+    add_references(stream_references, past, f"past_{id}")
+    add_references(stream_references, status, f"status_{id}")
+
+    ml_double_type = create_ml_double_type()
+    for forecast in ["Forecast", "Forecast Lower", "Forecast Upper"]:
+        stream_id = f"{id} {forecast}"
+        ml_stream = SdsStream(
+            stream_id,
+            ml_double_type.Id,
+            f"IndyIQ ML {forecast}",
+            f"IndyIQ ML {forecast}",
+            interpolation_mode=SdsInterpolationMode.Continuous,
+            extrapolation_mode=SdsExtrapolationMode.All,
+        )
+        ml_stream = client.Streams.getOrCreateStream(NAMESPACE_ID, ml_stream)
+        stream_reference = StreamReference(
+            forecast,
+            ml_stream.Name,
+            ml_stream.Id,
+            ml_stream.Description,
+        )
+        stream_references.append(stream_reference)
+    asset_type = create_ml_forecast_type()
     asset = Asset(id=id, name=name, description=description)
     asset.StreamReferences = stream_references
     asset.Metadata = metadata

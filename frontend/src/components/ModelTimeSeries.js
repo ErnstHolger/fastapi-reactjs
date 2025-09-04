@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PageHeader from './PageHeader';
-import ReactECharts from 'echarts-for-react';
+import Highcharts from 'highcharts/highstock';
+import HighchartsReact from 'highcharts-react-official';
 import { Button } from './ui/button';
 import axios from 'axios';
 
@@ -8,15 +9,12 @@ const ModelTimeSeries = () => {
   const [models, setModels] = useState([]);
   const [streams, setStreams] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
-  const [selectedStreams, setSelectedStreams] = useState([]);
   const [singleAxis, setSingleAxis] = useState(true);
   const [streamData, setStreamData] = useState({});
   const [selectedTimeRange, setSelectedTimeRange] = useState('1h');
   const [dataPointCount, setDataPointCount] = useState(1000);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const [darkMode, setDarkMode] = useState(false);
   const modelDropdownRef = useRef(null);
 
   // Fetch models when component mounts
@@ -88,8 +86,8 @@ const ModelTimeSeries = () => {
   };
 
   // Fetch asset values from connect/asset_values endpoint
-  const fetchAssetData = async (assetId, streamIds, timeRange = selectedTimeRange, pointCount = null) => {
-    if (!assetId || streamIds.length === 0) return { categories: [], data: {} };
+  const fetchAssetData = async (assetId, timeRange = selectedTimeRange, pointCount = null) => {
+    if (!assetId) return { categories: [], data: {} };
 
     const { start, end, recommendedCount } = getTimeRangeParams(timeRange);
     // Use provided pointCount, or fall back to recommendedCount for time range, or finally dataPointCount
@@ -99,7 +97,6 @@ const ModelTimeSeries = () => {
 
     console.log('ModelTimeSeries - Fetching asset data:', { 
       assetId, 
-      streamIds, 
       timeRange,
       start, 
       end, 
@@ -112,8 +109,7 @@ const ModelTimeSeries = () => {
           asset_id: assetId, 
           start, 
           end, 
-          count,
-          stream: streamIds
+          count
         },
         headers: { 'Content-Type': 'application/json' },
         timeout: 10000
@@ -121,18 +117,18 @@ const ModelTimeSeries = () => {
 
       console.log('ModelTimeSeries - API Response:', response.data);
 
-      const assetValues = response.data;
+      const streamData = response.data;
 
-      if (Array.isArray(assetValues) && assetValues.length > 0) {
-        // Process the asset values response
-        streamIds.forEach(streamId => {
-          const streamValues = assetValues.filter(item => item.stream_id === streamId);
+      if (streamData && typeof streamData === 'object' && !Array.isArray(streamData)) {
+        // Process the response where each key is a stream name and value is array of {timestamp, value} objects
+        Object.keys(streamData).forEach(streamKey => {
+          const streamValues = streamData[streamKey];
           
-          if (streamValues.length > 0) {
+          if (Array.isArray(streamValues) && streamValues.length > 0) {
             const values = streamValues.map(item => parseFloat(item.value || 0));
             const timestamps = streamValues.map(item => item.timestamp);
             
-            data[streamId] = values;
+            data[streamKey] = values;
             
             // Use timestamps from first stream for categories (x-axis)
             if (categories.length === 0) {
@@ -142,7 +138,7 @@ const ModelTimeSeries = () => {
               });
             }
           } else {
-            data[streamId] = [];
+            data[streamKey] = [];
           }
         });
       }
@@ -170,9 +166,13 @@ const ModelTimeSeries = () => {
   // Handle model selection
   const handleModelSelect = (modelId) => {
     setStreamData({ categories: [], data: {} });
-    setSelectedStreams([]);
     setSelectedModel(modelId);
     setModelDropdownOpen(false);
+    
+    // Automatically fetch data for the selected model
+    if (modelId) {
+      fetchAssetData(modelId, selectedTimeRange).then(setStreamData);
+    }
   };
 
   // Handle time range selection change
@@ -180,15 +180,14 @@ const ModelTimeSeries = () => {
     console.log('ModelTimeSeries - Time range changed:', { 
       from: selectedTimeRange, 
       to: newRange,
-      hasModel: !!selectedModel,
-      streamCount: selectedStreams.length
+      hasModel: !!selectedModel
     });
     
     setStreamData({ categories: [], data: {} });
     setSelectedTimeRange(newRange);
-    if (selectedModel && selectedStreams.length > 0) {
+    if (selectedModel) {
       // Don't pass pointCount so it uses the recommended count for the time range
-      fetchAssetData(selectedModel, selectedStreams, newRange).then(setStreamData);
+      fetchAssetData(selectedModel, newRange).then(setStreamData);
     }
   };
 
@@ -197,47 +196,14 @@ const ModelTimeSeries = () => {
     const count = parseInt(newCount) || 1000;
     setDataPointCount(count);
     setStreamData({ categories: [], data: {} });
-    if (selectedModel && selectedStreams.length > 0) {
-      fetchAssetData(selectedModel, selectedStreams, selectedTimeRange, count).then(setStreamData);
+    if (selectedModel) {
+      fetchAssetData(selectedModel, selectedTimeRange, count).then(setStreamData);
     }
-  };
-
-  // Filter streams based on search term
-  const filteredStreams = streams.filter(stream => {
-    const streamId = stream.Id || stream.id || '';
-    const streamName = stream.Name || stream.name || '';
-    const streamDesc = stream.Description || stream.description || '';
-    const searchLower = searchTerm.toLowerCase();
-    
-    return streamId.toLowerCase().includes(searchLower) || 
-           streamName.toLowerCase().includes(searchLower) || 
-           streamDesc.toLowerCase().includes(searchLower);
-  });
-
-  // Handle stream selection from dropdown
-  const handleStreamSelect = (streamId) => {
-    setStreamData({ categories: [], data: {} });
-    
-    setSelectedStreams(prev => {
-      const newSelection = prev.includes(streamId)
-        ? prev.filter(id => id !== streamId)
-        : [...prev, streamId];
-      
-      if (selectedModel && newSelection.length > 0) {
-        // Use recommended count for current time range
-        fetchAssetData(selectedModel, newSelection, selectedTimeRange).then(setStreamData);
-      }
-      
-      return newSelection;
-    });
   };
 
   // Handle clicking outside dropdowns to close them
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setDropdownOpen(false);
-      }
       if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target)) {
         setModelDropdownOpen(false);
       }
@@ -247,11 +213,21 @@ const ModelTimeSeries = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Create dynamic chart configuration based on selected streams
-  const createTimeSeriesOption = () => {
-    if (!selectedModel || selectedStreams.length === 0 || !streamData.categories) {
+  // Create dynamic chart configuration based on available data
+  const createHighchartsConfig = () => {
+    if (!selectedModel || !streamData.categories || Object.keys(streamData.data).length === 0) {
       return {
-        title: { text: 'Model Asset Data Visualization', left: 'center', textStyle: { fontSize: 18 } }
+        title: {
+          text: 'Model Asset Data Visualization',
+          style: {
+            color: darkMode ? '#d1d5db' : '#4b5563',
+            fontSize: '18px'
+          }
+        },
+        chart: {
+          backgroundColor: 'transparent'
+        },
+        series: []
       };
     }
 
@@ -264,103 +240,143 @@ const ModelTimeSeries = () => {
       '#558b2f', '#d84315', '#00838f'
     ];
 
-    // Create series for each selected stream
-    const series = selectedStreams.map((streamId, index) => {
-      const streamObj = streams.find(s => (s.Id || s.id) === streamId);
-      const displayName = streamObj ? (streamObj.Name || streamObj.name || streamId) : streamId;
+    // Get all available streams from the data
+    const availableStreams = Object.keys(streamData.data);
+    
+    // Create series for each available stream
+    const series = availableStreams.map((streamKey, index) => {
+      // Try to find stream by ID first, then by name, otherwise use the key directly
+      const streamObj = streams.find(s => 
+        (s.Id || s.id) === streamKey || 
+        (s.Name || s.name) === streamKey
+      );
+      const displayName = streamObj ? (streamObj.Name || streamObj.name || streamKey) : streamKey;
       
       return {
         name: displayName,
         type: 'line',
-        data: streamData.data[streamId] || [],
-        smooth: false,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { 
-          width: 2,
-          color: seriesColors[index % seriesColors.length]
+        data: streamData.data[streamKey] || [],
+        color: seriesColors[index % seriesColors.length],
+        yAxis: singleAxis ? 0 : index,
+        marker: {
+          symbol: 'circle',
+          radius: 2
         },
-        itemStyle: {
-          color: seriesColors[index % seriesColors.length]
-        },
-        yAxisIndex: singleAxis ? 0 : index
+        lineWidth: 2
       };
     });
-
-    // Create Y axes configuration
-    const yAxis = singleAxis 
-      ? {
-          type: 'value',
-          axisLabel: { fontSize: 11 },
-          name: 'Values',
-          nameLocation: 'middle',
-          nameGap: 40,
-          splitLine: { show: false }
-        }
-      : selectedStreams.map((streamId, index) => {
-          const streamObj = streams.find(s => (s.Id || s.id) === streamId);
-          const displayName = streamObj ? (streamObj.Name || streamObj.name || streamId) : streamId;
-          
-          return {
-            type: 'value',
-            axisLabel: { fontSize: 11 },
-            name: displayName,
-            nameLocation: 'middle',
-            nameGap: 40,
-            position: index % 2 === 0 ? 'left' : 'right',
-            offset: Math.floor(index / 2) * 60,
-            splitLine: { show: false }
-          };
-        });
 
     const selectedModelObj = models.find(m => (m.Id || m.id) === selectedModel);
     const modelName = selectedModelObj ? (selectedModelObj.name || selectedModel) : selectedModel;
 
+    // Create Y axes configuration
+    const yAxis = singleAxis 
+      ? {
+          title: {
+            text: 'Values',
+            style: { color: darkMode ? '#d1d5db' : '#4b5563' }
+          },
+          labels: {
+            style: { color: darkMode ? '#d1d5db' : '#4b5563', fontSize: '11px' }
+          },
+          gridLineWidth: 0
+        }
+      : availableStreams.map((streamKey, index) => {
+          const streamObj = streams.find(s => 
+            (s.Id || s.id) === streamKey || 
+            (s.Name || s.name) === streamKey
+          );
+          const displayName = streamObj ? (streamObj.Name || streamObj.name || streamKey) : streamKey;
+          
+          return {
+            title: {
+              text: displayName,
+              style: { color: darkMode ? '#d1d5db' : '#4b5563' }
+            },
+            labels: {
+              style: { color: darkMode ? '#d1d5db' : '#4b5563', fontSize: '11px' }
+            },
+            opposite: index % 2 === 1,
+            offset: Math.floor(index / 2) * 60,
+            gridLineWidth: 0
+          };
+        });
+
     return {
-      title: { text: `Model Asset Data - ${modelName}`, left: 'center', textStyle: { fontSize: 18 } },
-      color: seriesColors,
-      tooltip: { 
-        trigger: 'axis',
-        axisPointer: { type: 'cross' }
+      chart: {
+        type: 'line',
+        backgroundColor: 'transparent',
+        height: 600,
+        zoomType: 'x'
       },
-      legend: { 
-        data: selectedStreams.map(streamId => {
-          const streamObj = streams.find(s => (s.Id || s.id) === streamId);
-          return streamObj ? (streamObj.Name || streamObj.name || streamId) : streamId;
-        }),
-        top: 40,
-        textStyle: { fontSize: 12 }
+      navigator: {
+        enabled: true,
+        series: {
+          color: '#667eea',
+          fillOpacity: 0.2,
+          lineWidth: 2
+        }
       },
-      grid: { 
-        top: 120, 
-        left: singleAxis ? 60 : 100, 
-        right: singleAxis ? 60 : 100, 
-        bottom: 80,
-        containLabel: true 
+      scrollbar: {
+        enabled: true,
+        barBackgroundColor: '#e0e0e0',
+        barBorderRadius: 4,
+        barBorderWidth: 0,
+        buttonBackgroundColor: '#667eea',
+        buttonBorderWidth: 0,
+        buttonArrowColor: 'white',
+        trackBackgroundColor: '#f5f5f5',
+        trackBorderWidth: 1,
+        trackBorderRadius: 4,
+        trackBorderColor: '#e0e0e0'
+      },
+      title: {
+        text: `Model Asset Data - ${modelName}`,
+        style: {
+          color: darkMode ? '#d1d5db' : '#4b5563',
+          fontSize: '18px'
+        }
+      },
+      colors: seriesColors,
+      tooltip: {
+        shared: true,
+        crosshairs: true,
+        backgroundColor: darkMode ? '#333333' : '#ffffff',
+        borderColor: darkMode ? '#666666' : '#cccccc',
+        style: { 
+          color: darkMode ? '#d1d5db' : '#4b5563' 
+        }
+      },
+      legend: {
+        itemStyle: {
+          color: darkMode ? '#d1d5db' : '#4b5563',
+          fontSize: '12px'
+        },
+        itemHoverStyle: {
+          color: darkMode ? '#ffffff' : '#000000'
+        }
       },
       xAxis: {
-        type: 'category',
-        data: streamData.categories,
-        axisLabel: { fontSize: 11 },
-        name: 'Time',
-        nameLocation: 'middle',
-        nameGap: 25
+        categories: streamData.categories,
+        title: {
+          text: 'Time',
+          style: { color: darkMode ? '#d1d5db' : '#4b5563' }
+        },
+        labels: {
+          style: { color: darkMode ? '#d1d5db' : '#4b5563', fontSize: '11px' }
+        },
+        lineColor: darkMode ? '#666666' : '#cccccc'
       },
       yAxis: yAxis,
       series: series,
-      dataZoom: [
-        {
-          type: 'inside',
-          start: 0,
-          end: 100
-        },
-        {
-          start: 0,
-          end: 100,
-          height: 30,
-          bottom: 15
+      plotOptions: {
+        line: {
+          marker: {
+            enabled: true,
+            radius: 2
+          }
         }
-      ]
+      }
     };
   };
 
@@ -430,128 +446,23 @@ const ModelTimeSeries = () => {
             )}
           </div>
 
-          {/* Stream Selection Dropdown - Only show if model is selected */}
-          {selectedModel && (
-            <div className="relative" ref={dropdownRef}>
-              <div
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="min-w-[300px] max-w-[500px] px-3 py-2 text-sm border border-border rounded-lg bg-background cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 flex items-center justify-between"
-              >
-                <div className="flex-1 truncate">
-                  {selectedStreams.length === 0 ? (
-                    <span className="text-muted-foreground">Select streams...</span>
-                  ) : (
-                    <span>
-                      {selectedStreams.length === 1 
-                        ? streams.find(s => (s.Id || s.id) === selectedStreams[0])?.Name || selectedStreams[0]
-                        : `${selectedStreams.length} streams selected`
-                      }
-                    </span>
-                  )}
-                </div>
-                <svg 
-                  className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
 
-              {dropdownOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-background border border-border rounded-lg shadow-lg max-h-80 overflow-hidden">
-                  {/* Search Input */}
-                  <div className="p-2 border-b border-border">
-                    <input
-                      type="text"
-                      placeholder="Search streams..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-
-                  {/* Stream Options */}
-                  <div className="overflow-y-auto max-h-60">
-                    {filteredStreams.length > 0 ? (
-                      filteredStreams.map((stream, index) => {
-                        const streamId = stream.Id || stream.id || `stream_${index}`;
-                        const streamName = stream.Name || stream.name || streamId;
-                        const streamDesc = stream.Description || stream.description || '';
-                        const isSelected = selectedStreams.includes(streamId);
-                        
-                        return (
-                          <div
-                            key={`stream_${index}_${streamId}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStreamSelect(streamId);
-                            }}
-                            className={`px-3 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground flex items-center gap-2 ${
-                              isSelected ? 'bg-primary text-primary-foreground' : ''
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {}}
-                              className="w-4 h-4"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium truncate">{streamName}</div>
-                              {streamDesc && (
-                                <div className="text-xs opacity-70 truncate">{streamDesc}</div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">
-                        {searchTerm ? 'No streams found' : 'Loading streams...'}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Selected Count */}
-                  {selectedStreams.length > 0 && (
-                    <div className="p-2 border-t border-border bg-muted">
-                      <span className="text-xs text-muted-foreground">
-                        {selectedStreams.length} stream{selectedStreams.length !== 1 ? 's' : ''} selected
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Time Range Selector */}
-          <div className="flex gap-2">
-            {['5min', '10min', '30min', '1h', '8h', '24h', '1week'].map((range) => (
-              <button
-                key={range}
-                onClick={() => handleTimeRangeChange(range)}
-                className={`flex flex-col items-center p-2 rounded-lg border transition-colors w-16 ${
-                  selectedTimeRange === range 
-                    ? 'bg-primary text-primary-foreground border-primary' 
-                    : 'bg-background hover:bg-accent hover:text-accent-foreground border-border'
-                }`}
-              >
-                <svg 
-                  className="w-4 h-4 mb-1" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12,6 12,12 16,14"/>
-                </svg>
-                <span className="text-xs">{range}</span>
-              </button>
-            ))}
+          {/* Time Range Dropdown */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">Time Range:</label>
+            <select
+              value={selectedTimeRange}
+              onChange={(e) => handleTimeRangeChange(e.target.value)}
+              className="w-24 px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+            >
+              <option value="5min">5 min</option>
+              <option value="10min">10 min</option>
+              <option value="30min">30 min</option>
+              <option value="1h">1 hour</option>
+              <option value="8h">8 hours</option>
+              <option value="24h">24 hours</option>
+              <option value="1week">1 week</option>
+            </select>
           </div>
 
           {/* Axis Toggle */}
@@ -594,14 +505,9 @@ const ModelTimeSeries = () => {
       </PageHeader>
       
       <div className="bg-card border border-border rounded-lg p-6">
-        <ReactECharts 
-          option={createTimeSeriesOption()}
-          style={{ height: '600px', width: '100%' }}
-          opts={{ 
-            renderer: 'svg',
-            useDirtyRect: false,
-            useCoarsePointer: false
-          }}
+        <HighchartsReact
+          highcharts={Highcharts}
+          options={createHighchartsConfig()}
         />
       </div>
     </div>

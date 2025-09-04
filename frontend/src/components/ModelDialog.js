@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Tooltip } from './ui/tooltip';
 import StreamSelectPanel from './StreamSelectPanel';
 
 const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
@@ -9,19 +10,49 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
     id: '',
     name: '',
     description: '',
-    model_type: 'NBEATS',
-    past_covariates: [],
+    model_type: 'LINEAR',
+    past: [],
     target: [],
-    future_covariates: [],
+    future: [],
     status: [],
-    training_horizon: 0,
-    forecast_horizon: 0,
-    update_frequency: 0,
-    retrain_frequency: 0,
-    sampling_rate: 0
+    lag: 20,
+    lead: 10,
+    update: '0 */30 * * * *',
+    retrain: '0 0 */12 * * *',
+    interval: 5
   });
 
   const [errors, setErrors] = useState({});
+
+  // Validate cron expression format
+  const validateCron = (cronExpression) => {
+    if (!cronExpression || typeof cronExpression !== 'string') return false;
+    
+    const parts = cronExpression.trim().split(/\s+/);
+    if (parts.length !== 6) return false; // Should have 6 parts for seconds format
+    
+    // Basic validation for each part
+    const patterns = [
+      /^(\*|[0-5]?\d)$/, // seconds: 0-59
+      /^(\*|[0-5]?\d)$/, // minutes: 0-59
+      /^(\*|[01]?\d|2[0-3])$/, // hours: 0-23
+      /^(\*|[12]?\d|3[01])$/, // day of month: 1-31
+      /^(\*|[01]?\d)$/, // month: 1-12
+      /^(\*|[0-6])$/ // day of week: 0-6
+    ];
+    
+    // Allow ranges, lists, and step values
+    const advancedPatterns = [
+      /^(\*|[0-5]?\d|\*\/\d+|[0-5]?\d-[0-5]?\d|([0-5]?\d,)*[0-5]?\d)$/, // seconds
+      /^(\*|[0-5]?\d|\*\/\d+|[0-5]?\d-[0-5]?\d|([0-5]?\d,)*[0-5]?\d)$/, // minutes
+      /^(\*|[01]?\d|2[0-3]|\*\/\d+|[01]?\d-[01]?\d|2[0-3]-2[0-3]|([01]?\d|2[0-3],)*([01]?\d|2[0-3]))$/, // hours
+      /^(\*|[12]?\d|3[01]|\*\/\d+|[12]?\d-[12]?\d|3[01]-3[01]|([12]?\d|3[01],)*([12]?\d|3[01]))$/, // day of month
+      /^(\*|[01]?\d|\*\/\d+|[01]?\d-[01]?\d|([01]?\d,)*[01]?\d)$/, // month
+      /^(\*|[0-6]|\*\/\d+|[0-6]-[0-6]|([0-6],)*[0-6])$/ // day of week
+    ];
+    
+    return parts.every((part, index) => advancedPatterns[index].test(part));
+  };
 
   useEffect(() => {
     if (model && mode === 'edit') {
@@ -29,32 +60,32 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
         id: model.id || '',
         name: model.name || '',
         description: model.description || '',
-        model_type: model.model_type || 'NBEATS',
-        past_covariates: model.past_covariates || [],
+        model_type: model.model_type || 'LINEAR',
+        past: model.past || [],
         target: model.target || [],
-        future_covariates: model.future_covariates || [],
+        future: model.future || [],
         status: model.status || [],
-        training_horizon: model.training_horizon || 14400,
-        forecast_horizon: model.forecast_horizon || 120,
-        update_frequency: model.update_frequency || 30,
-        retrain_frequency: model.retrain_frequency || 7200,
-        sampling_rate: model.sampling_rate || 0
+        lag: model.lag || 20,
+        lead: model.lead || 10,
+        update: model.update || '0 */30 * * * *',
+        retrain: model.retrain || '0 0 */12 * * *',
+        interval: model.interval || 5
       });
     } else {
       setFormData({
         id: '',
         name: '',
         description: '',
-        model_type: 'NBEATS',
-        past_covariates: [],
+        model_type: 'LINEAR',
+        past: [],
         target: [],
-        future_covariates: [],
+        future: [],
         status: [],
-        training_horizon: 0,
-        forecast_horizon: 0,
-        update_frequency: 0,
-        retrain_frequency: 0,
-        sampling_rate: 0
+        lag: 20,
+        lead: 10,
+        update: '0 */30 * * * *',
+        retrain: '0 0 */12 * * *',
+        interval: 5
       });
     }
     setErrors({});
@@ -73,9 +104,22 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+    
+    // Clear existing error and validate cron expressions in real-time
+    const newErrors = { ...errors };
+    if (field === 'update' || field === 'retrain') {
+      if (value.trim() === '') {
+        newErrors[field] = `${field === 'update' ? 'Update' : 'Retrain'} cron expression is required`;
+      } else if (!validateCron(value)) {
+        newErrors[field] = 'Invalid cron expression format';
+      } else {
+        delete newErrors[field];
+      }
+    } else if (errors[field]) {
+      delete newErrors[field];
     }
+    
+    setErrors(newErrors);
   };
 
 
@@ -86,13 +130,21 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
     if (!formData.description.trim()) newErrors.description = 'Description is required';
     if (!formData.id.trim()) newErrors.id = 'ID is required';
     if (!formData.model_type.trim()) newErrors.model_type = 'Model type is required';
-    if (formData.past_covariates.length === 0) newErrors.past_covariates = 'At least one past covariate is required';
+    if (formData.past.length === 0) newErrors.past = 'At least one past covariate is required';
     if (formData.target.length === 0) newErrors.target = 'At least one target is required';
-    if (formData.training_horizon <= 0) newErrors.training_horizon = 'Training horizon must be positive';
-    if (formData.forecast_horizon <= 0) newErrors.forecast_horizon = 'Forecast horizon must be positive';
-    if (formData.update_frequency <= 0) newErrors.update_frequency = 'Update frequency must be positive';
-    if (formData.retrain_frequency <= 0) newErrors.retrain_frequency = 'Retrain frequency must be positive';
-    if (formData.sampling_rate <= 0) newErrors.sampling_rate = 'Sampling rate must be positive';
+    if (formData.lag <= 0) newErrors.lag = 'Lag must be positive';
+    if (formData.lead <= 0) newErrors.lead = 'Lead must be positive';
+    if (!formData.update.trim()) {
+      newErrors.update = 'Update cron expression is required';
+    } else if (!validateCron(formData.update)) {
+      newErrors.update = 'Invalid cron expression format';
+    }
+    if (!formData.retrain.trim()) {
+      newErrors.retrain = 'Retrain cron expression is required';
+    } else if (!validateCron(formData.retrain)) {
+      newErrors.retrain = 'Invalid cron expression format';
+    }
+    if (formData.interval <= 0) newErrors.interval = 'Interval must be positive';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -122,7 +174,17 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">ID</label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium">ID</label>
+                    <Tooltip content="Unique model identifier">
+                      <button
+                        type="button"
+                        className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                      >
+                        ?
+                      </button>
+                    </Tooltip>
+                  </div>
                   <input
                     type="text"
                     value={formData.id}
@@ -134,7 +196,17 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Name</label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium">Name</label>
+                    <Tooltip content="Model display name">
+                      <button
+                        type="button"
+                        className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                      >
+                        ?
+                      </button>
+                    </Tooltip>
+                  </div>
                   <input
                     type="text"
                     value={formData.name}
@@ -146,7 +218,17 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Description</label>
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="block text-sm font-medium">Description</label>
+                  <Tooltip content="Model description and purpose">
+                    <button
+                      type="button"
+                      className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                    >
+                      ?
+                    </button>
+                  </Tooltip>
+                </div>
                 <textarea
                   value={formData.description}
                   onChange={(e) => handleInputChange('description', e.target.value)}
@@ -157,16 +239,27 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Model Type</label>
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="block text-sm font-medium">Model Type</label>
+                  <Tooltip content="ML algorithm type">
+                    <button
+                      type="button"
+                      className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                    >
+                      ?
+                    </button>
+                  </Tooltip>
+                </div>
                 <Select value={formData.model_type} onValueChange={(value) => handleInputChange('model_type', value)}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select model type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="NBEATS">NBEATS</SelectItem>
-                    <SelectItem value="TRANSFORMER">Transformer</SelectItem>
-                    <SelectItem value="LSTM">LSTM</SelectItem>
-                    <SelectItem value="ARIMA">ARIMA</SelectItem>
+                    <SelectItem value="LINEAR">Linear</SelectItem>
+                    <SelectItem value="RANDOM FOREST">Random Forest</SelectItem>
+                    <SelectItem value="XGBOOST">XGBoost</SelectItem>
+                    <SelectItem value="LIGHTGBM">LightGBM</SelectItem>
+                    <SelectItem value="CATBOOST">CatBoost</SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.model_type && <p className="text-red-500 text-xs mt-1">{errors.model_type}</p>}
@@ -174,63 +267,123 @@ const ModelDialog = ({ open, onClose, onSave, model, streams, mode }) => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Training Horizon</label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium">Lag (seconds)</label>
+                    <Tooltip content="Past time steps for training">
+                      <button
+                        type="button"
+                        className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                      >
+                        ?
+                      </button>
+                    </Tooltip>
+                  </div>
                   <input
                     type="number"
-                    value={formData.training_horizon}
-                    onChange={(e) => handleInputChange('training_horizon', parseInt(e.target.value) || 0)}
+                    value={formData.lag}
+                    onChange={(e) => handleInputChange('lag', parseInt(e.target.value) || 0)}
                     className="w-full p-2 border border-border rounded-md bg-background"
                     min="1"
                   />
-                  {errors.training_horizon && <p className="text-red-500 text-xs mt-1">{errors.training_horizon}</p>}
+                  {errors.lag && <p className="text-red-500 text-xs mt-1">{errors.lag}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Forecast Horizon</label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium">Lead (seconds)</label>
+                    <Tooltip content="Future time steps to predict">
+                      <button
+                        type="button"
+                        className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                      >
+                        ?
+                      </button>
+                    </Tooltip>
+                  </div>
                   <input
                     type="number"
-                    value={formData.forecast_horizon}
-                    onChange={(e) => handleInputChange('forecast_horizon', parseInt(e.target.value) || 0)}
+                    value={formData.lead}
+                    onChange={(e) => handleInputChange('lead', parseInt(e.target.value) || 0)}
                     className="w-full p-2 border border-border rounded-md bg-background"
                     min="1"
                   />
-                  {errors.forecast_horizon && <p className="text-red-500 text-xs mt-1">{errors.forecast_horizon}</p>}
+                  {errors.lead && <p className="text-red-500 text-xs mt-1">{errors.lead}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Update Frequency</label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium">Update</label>
+                    <Tooltip content="Cron schedule for updates">
+                      <button
+                        type="button"
+                        className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                      >
+                        ?
+                      </button>
+                    </Tooltip>
+                  </div>
                   <input
-                    type="number"
-                    value={formData.update_frequency}
-                    onChange={(e) => handleInputChange('update_frequency', parseInt(e.target.value) || 0)}
-                    className="w-full p-2 border border-border rounded-md bg-background"
-                    min="1"
+                    type="text"
+                    value={formData.update}
+                    onChange={(e) => handleInputChange('update', e.target.value)}
+                    className={`w-full p-2 border rounded-md bg-background ${
+                      errors.update ? 'border-red-500 focus:ring-red-500' : 'border-border focus:ring-primary'
+                    }`}
+                    placeholder="0 */30 * * * *"
                   />
-                  {errors.update_frequency && <p className="text-red-500 text-xs mt-1">{errors.update_frequency}</p>}
+                  {errors.update && <p className="text-red-500 text-xs mt-1">{errors.update}</p>}
+                  {!errors.update && (
+                    <p className="text-gray-500 text-xs mt-1">Format: sec min hour day month dayOfWeek</p>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Retrain Frequency</label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium">Retrain</label>
+                    <Tooltip content="Cron schedule for retraining">
+                      <button
+                        type="button"
+                        className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                      >
+                        ?
+                      </button>
+                    </Tooltip>
+                  </div>
                   <input
-                    type="number"
-                    value={formData.retrain_frequency}
-                    onChange={(e) => handleInputChange('retrain_frequency', parseInt(e.target.value) || 0)}
-                    className="w-full p-2 border border-border rounded-md bg-background"
-                    min="1"
+                    type="text"
+                    value={formData.retrain}
+                    onChange={(e) => handleInputChange('retrain', e.target.value)}
+                    className={`w-full p-2 border rounded-md bg-background ${
+                      errors.retrain ? 'border-red-500 focus:ring-red-500' : 'border-border focus:ring-primary'
+                    }`}
+                    placeholder="0 0 */12 * * *"
                   />
-                  {errors.retrain_frequency && <p className="text-red-500 text-xs mt-1">{errors.retrain_frequency}</p>}
+                  {errors.retrain && <p className="text-red-500 text-xs mt-1">{errors.retrain}</p>}
+                  {!errors.retrain && (
+                    <p className="text-gray-500 text-xs mt-1">Format: sec min hour day month dayOfWeek</p>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Sampling Rate</label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium">Interval (seconds)</label>
+                    <Tooltip content="Data sampling interval">
+                      <button
+                        type="button"
+                        className="w-4 h-4 rounded-full bg-gray-600 hover:bg-gray-700 flex items-center justify-center text-xs text-white"
+                      >
+                        ?
+                      </button>
+                    </Tooltip>
+                  </div>
                   <input
                     type="number"
-                    value={formData.sampling_rate}
-                    onChange={(e) => handleInputChange('sampling_rate', parseInt(e.target.value) || 0)}
+                    value={formData.interval}
+                    onChange={(e) => handleInputChange('interval', parseInt(e.target.value) || 0)}
                     className="w-full p-2 border border-border rounded-md bg-background"
                     min="1"
                   />
-                  {errors.sampling_rate && <p className="text-red-500 text-xs mt-1">{errors.sampling_rate}</p>}
+                  {errors.interval && <p className="text-red-500 text-xs mt-1">{errors.interval}</p>}
                 </div>
               </div>
             </div>

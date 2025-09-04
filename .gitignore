@@ -1,6 +1,6 @@
 # General
 
-
+*.png
 # Backend
 backend/.vscode/
 backend/.venv/

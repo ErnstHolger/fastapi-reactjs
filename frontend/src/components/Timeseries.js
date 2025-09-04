@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PageHeader from './PageHeader';
-import ReactECharts from 'echarts-for-react';
+import Highcharts from 'highcharts/highstock';
+import HighchartsReact from 'highcharts-react-official';
 import { Button } from './ui/button';
 import axios from 'axios';
 
@@ -13,6 +14,7 @@ const Timeseries = () => {
   const [dataPointCount, setDataPointCount] = useState(1000);
   const [searchTerm, setSearchTerm] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const dropdownRef = useRef(null);
 
   // Fetch streams when component mounts
@@ -45,14 +47,13 @@ const Timeseries = () => {
       '24h': { minutes: 24 * 60 },
       '1week': { minutes: 7 * 24 * 60 }
     };
-    
+
     const config = rangeConfig[range] || rangeConfig['1h'];
     const startTime = new Date(now.getTime() - config.minutes * 60 * 1000);
-    
+
     return {
       start: startTime.toISOString(),
-      end: now.toISOString(),
-      intervals: dataPointCount
+      end: now.toISOString()
     };
   };
 
@@ -60,7 +61,21 @@ const Timeseries = () => {
   const fetchStreamData = async (streamIds) => {
     if (streamIds.length === 0) return { categories: [], data: {} };
 
-    const { start, end, intervals } = getTimeRangeParams(selectedTimeRange);
+    const { start, end } = getTimeRangeParams(selectedTimeRange);
+    return await fetchStreamDataInternal(streamIds, start, end, dataPointCount);
+  };
+
+  // Fetch stream data with specific range
+  const fetchStreamDataWithRange = async (streamIds, timeRange, customIntervals = null) => {
+    if (streamIds.length === 0) return { categories: [], data: {} };
+
+    const { start, end } = getTimeRangeParams(timeRange);
+    const intervals = customIntervals || dataPointCount;
+    return await fetchStreamDataInternal(streamIds, start, end, intervals);
+  };
+
+  // Internal function to fetch stream data
+  const fetchStreamDataInternal = async (streamIds, start, end, intervals) => {
     const data = {};
     const categories = [];
 
@@ -81,7 +96,7 @@ const Timeseries = () => {
       });
 
       const results = await Promise.all(promises);
-      
+
       // Process the results
       results.forEach(({ streamId, data: streamValues }) => {
         if (Array.isArray(streamValues) && streamValues.length > 0) {
@@ -90,14 +105,14 @@ const Timeseries = () => {
             if (Array.isArray(item)) return parseFloat(item[1]) || 0;
             return parseFloat(item.value || item.Value || 0);
           });
-          
+
           const timestamps = streamValues.map(item => {
             if (Array.isArray(item)) return item[0];
             return item.timestamp || item.Timestamp || new Date().toISOString();
           });
-          
+
           data[streamId] = values;
-          
+
           // Use timestamps from first stream for categories (x-axis)
           if (categories.length === 0) {
             timestamps.forEach(timestamp => {
@@ -116,7 +131,7 @@ const Timeseries = () => {
         const startTime = new Date(start);
         const endTime = new Date(end);
         const timeStep = (endTime.getTime() - startTime.getTime()) / (numPoints - 1);
-        
+
         for (let i = 0; i < numPoints; i++) {
           const timestamp = new Date(startTime.getTime() + i * timeStep);
           categories.push(timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -134,10 +149,11 @@ const Timeseries = () => {
   const handleTimeRangeChange = (newRange) => {
     // Clear current data immediately
     setStreamData({ categories: [], data: {} });
-    
+
     setSelectedTimeRange(newRange);
     if (selectedStreams.length > 0) {
-      fetchStreamData(selectedStreams).then(setStreamData);
+      // Create a modified fetchStreamData that uses the new range
+      fetchStreamDataWithRange(selectedStreams, newRange).then(setStreamData);
     }
   };
 
@@ -145,7 +161,7 @@ const Timeseries = () => {
   const handleCountChange = (newCount) => {
     const count = parseInt(newCount) || 1000;
     setDataPointCount(count);
-    
+
     // Clear current data and refetch if streams are selected
     setStreamData({ categories: [], data: {} });
     if (selectedStreams.length > 0) {
@@ -159,27 +175,27 @@ const Timeseries = () => {
     const streamName = stream.Name || stream.name || '';
     const streamDesc = stream.Description || stream.description || '';
     const searchLower = searchTerm.toLowerCase();
-    
-    return streamId.toLowerCase().includes(searchLower) || 
-           streamName.toLowerCase().includes(searchLower) || 
-           streamDesc.toLowerCase().includes(searchLower);
+
+    return streamId.toLowerCase().includes(searchLower) ||
+      streamName.toLowerCase().includes(searchLower) ||
+      streamDesc.toLowerCase().includes(searchLower);
   });
 
   // Handle stream selection from dropdown
   const handleStreamSelect = (streamId) => {
     // Clear current data immediately
     setStreamData({ categories: [], data: {} });
-    
+
     setSelectedStreams(prev => {
       const newSelection = prev.includes(streamId)
         ? prev.filter(id => id !== streamId)
         : [...prev, streamId];
-      
+
       // Update stream data when selection changes
       if (newSelection.length > 0) {
         fetchStreamData(newSelection).then(setStreamData);
       }
-      
+
       return newSelection;
     });
   };
@@ -197,10 +213,20 @@ const Timeseries = () => {
   }, []);
 
   // Create dynamic chart configuration based on selected streams
-  const createTimeSeriesOption = () => {
+  const createHighchartsConfig = () => {
     if (selectedStreams.length === 0 || !streamData.categories) {
       return {
-        title: { text: 'Stream Data Visualization', left: 'center', textStyle: { fontSize: 18 } }
+        title: {
+          text: 'Stream Data Visualization',
+          style: {
+            color: darkMode ? '#d1d5db' : '#4b5563',
+            fontSize: '18px'
+          }
+        },
+        chart: {
+          backgroundColor: 'transparent'
+        },
+        series: []
       };
     }
 
@@ -218,103 +244,127 @@ const Timeseries = () => {
       // Find the stream object to get the proper name
       const streamObj = streams.find(s => (s.Id || s.id) === streamId);
       const displayName = streamObj ? (streamObj.Name || streamObj.name || streamId) : streamId;
-      
+
       return {
         name: displayName,
         type: 'line',
         data: streamData.data[streamId] || [],
-        smooth: false,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { 
-          width: 2,
-          color: seriesColors[index % seriesColors.length]
+        color: seriesColors[index % seriesColors.length],
+        yAxis: singleAxis ? 0 : index,
+        marker: {
+          symbol: 'circle',
+          radius: 2
         },
-        itemStyle: {
-          color: seriesColors[index % seriesColors.length]
-        },
-        yAxisIndex: singleAxis ? 0 : index // Use different axes if not single axis
+        lineWidth: 2
       };
     });
 
     // Create Y axes configuration
-    const yAxis = singleAxis 
+    const yAxis = singleAxis
       ? {
-          type: 'value',
-          axisLabel: { fontSize: 11 },
-          name: 'Values',
-          nameLocation: 'middle',
-          nameGap: 40,
-          splitLine: { show: false }
+          title: {
+            text: 'Values',
+            style: { color: darkMode ? '#d1d5db' : '#4b5563' }
+          },
+          labels: {
+            style: { color: darkMode ? '#d1d5db' : '#4b5563', fontSize: '11px' }
+          },
+          gridLineWidth: 0
         }
       : selectedStreams.map((streamId, index) => {
           // Find the stream object to get the proper name for Y-axis
           const streamObj = streams.find(s => (s.Id || s.id) === streamId);
           const displayName = streamObj ? (streamObj.Name || streamObj.name || streamId) : streamId;
-          
+
           return {
-            type: 'value',
-            axisLabel: { fontSize: 11 },
-            name: displayName,
-            nameLocation: 'middle',
-            nameGap: 40,
-            position: index % 2 === 0 ? 'left' : 'right',
+            title: {
+              text: displayName,
+              style: { color: darkMode ? '#d1d5db' : '#4b5563' }
+            },
+            labels: {
+              style: { color: darkMode ? '#d1d5db' : '#4b5563', fontSize: '11px' }
+            },
+            opposite: index % 2 === 1,
             offset: Math.floor(index / 2) * 60,
-            splitLine: { show: false }
+            gridLineWidth: 0
           };
         });
 
     return {
-      title: { text: 'Stream Data Visualization', left: 'center', textStyle: { fontSize: 18 } },
-      color: [
-        '#03a9f4', '#ad1457', '#f57f17', '#8bc34a', '#0277bd',
-        '#ffc107', '#e91e63', '#607d8b', '#283593', '#ff5722',
-        '#00bcd4', '#673ab7', '#f44336', '#795548', '#2196f3',
-        '#cddc39', '#9c27b0', '#009688', '#3f51b5', '#37474f',
-        '#558b2f', '#d84315', '#00838f'
-      ],
-      tooltip: { 
-        trigger: 'axis',
-        axisPointer: { type: 'cross' }
+      chart: {
+        type: 'line',
+        backgroundColor: 'transparent',
+        height: 600,
+        zoomType: 'x'
       },
-      legend: { 
-        data: selectedStreams.map(streamId => {
-          const streamObj = streams.find(s => (s.Id || s.id) === streamId);
-          return streamObj ? (streamObj.Name || streamObj.name || streamId) : streamId;
-        }),
-        top: 40,
-        textStyle: { fontSize: 12 }
+      navigator: {
+        enabled: true,
+        series: {
+          color: '#667eea',
+          fillOpacity: 0.2,
+          lineWidth: 2
+        }
       },
-      grid: { 
-        top: 120, 
-        left: singleAxis ? 60 : 100, 
-        right: singleAxis ? 60 : 100, 
-        bottom: 80,
-        containLabel: true 
+      scrollbar: {
+        enabled: true,
+        barBackgroundColor: '#e0e0e0',
+        barBorderRadius: 4,
+        barBorderWidth: 0,
+        buttonBackgroundColor: '#667eea',
+        buttonBorderWidth: 0,
+        buttonArrowColor: 'white',
+        trackBackgroundColor: '#f5f5f5',
+        trackBorderWidth: 1,
+        trackBorderRadius: 4,
+        trackBorderColor: '#e0e0e0'
+      },
+      title: {
+        text: 'Stream Data Visualization',
+        style: {
+          color: darkMode ? '#d1d5db' : '#4b5563',
+          fontSize: '18px'
+        }
+      },
+      colors: seriesColors,
+      tooltip: {
+        shared: true,
+        crosshairs: true,
+        backgroundColor: darkMode ? '#333333' : '#ffffff',
+        borderColor: darkMode ? '#666666' : '#cccccc',
+        style: { 
+          color: darkMode ? '#d1d5db' : '#4b5563' 
+        }
+      },
+      legend: {
+        itemStyle: {
+          color: darkMode ? '#d1d5db' : '#4b5563',
+          fontSize: '12px'
+        },
+        itemHoverStyle: {
+          color: darkMode ? '#ffffff' : '#000000'
+        }
       },
       xAxis: {
-        type: 'category',
-        data: streamData.categories,
-        axisLabel: { fontSize: 11 },
-        name: 'Time',
-        nameLocation: 'middle',
-        nameGap: 25
+        categories: streamData.categories,
+        title: {
+          text: 'Time',
+          style: { color: darkMode ? '#d1d5db' : '#4b5563' }
+        },
+        labels: {
+          style: { color: darkMode ? '#d1d5db' : '#4b5563', fontSize: '11px' }
+        },
+        lineColor: darkMode ? '#666666' : '#cccccc'
       },
       yAxis: yAxis,
       series: series,
-      dataZoom: [
-        {
-          type: 'inside',
-          start: 0,
-          end: 100
-        },
-        {
-          start: 0,
-          end: 100,
-          height: 30,
-          bottom: 15
+      plotOptions: {
+        line: {
+          marker: {
+            enabled: true,
+            radius: 2
+          }
         }
-      ]
+      }
     };
   };
 
@@ -333,17 +383,17 @@ const Timeseries = () => {
                   <span className="text-muted-foreground">Select streams...</span>
                 ) : (
                   <span>
-                    {selectedStreams.length === 1 
+                    {selectedStreams.length === 1
                       ? streams.find(s => (s.Id || s.id) === selectedStreams[0])?.Name || selectedStreams[0]
                       : `${selectedStreams.length} streams selected`
                     }
                   </span>
                 )}
               </div>
-              <svg 
+              <svg
                 className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
-                fill="none" 
-                stroke="currentColor" 
+                fill="none"
+                stroke="currentColor"
                 viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -372,7 +422,7 @@ const Timeseries = () => {
                       const streamName = stream.Name || stream.name || streamId;
                       const streamDesc = stream.Description || stream.description || '';
                       const isSelected = selectedStreams.includes(streamId);
-                      
+
                       return (
                         <div
                           key={`stream_${index}_${streamId}`}
@@ -380,22 +430,20 @@ const Timeseries = () => {
                             e.stopPropagation();
                             handleStreamSelect(streamId);
                           }}
-                          className={`px-3 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground flex items-center gap-2 ${
-                            isSelected ? 'bg-primary text-primary-foreground' : ''
-                          }`}
+                          className={`px-3 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground flex items-center gap-2 ${isSelected ? 'bg-primary text-primary-foreground' : ''
+                            }`}
                         >
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => {}}
+                            onChange={() => { }}
                             className="w-4 h-4"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="font-medium truncate">{streamName}</div>
                             {streamDesc && (
-                              <div className={`text-xs truncate ${
-                                isSelected ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                              }`}>{streamDesc}</div>
+                              <div className={`text-xs truncate ${isSelected ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                                }`}>{streamDesc}</div>
                             )}
                           </div>
                         </div>
@@ -420,50 +468,22 @@ const Timeseries = () => {
             )}
           </div>
 
-          {/* Time Range Selector */}
-          <div className="flex gap-2">
-            {['5min', '10min', '30min', '1h', '8h', '24h', '1week'].map((range) => (
-              <button
-                key={range}
-                onClick={() => handleTimeRangeChange(range)}
-                className={`flex flex-col items-center p-2 rounded-lg border transition-colors w-16 ${
-                  selectedTimeRange === range 
-                    ? 'bg-primary text-primary-foreground border-primary' 
-                    : 'bg-background hover:bg-accent hover:text-accent-foreground border-border'
-                }`}
-              >
-                <svg 
-                  className="w-4 h-4 mb-1" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12,6 12,12 16,14"/>
-                </svg>
-                <span className="text-xs">{range}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Axis Toggle */}
-          <div className="flex gap-2">
-            <Button
-              variant={singleAxis ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSingleAxis(true)}
-              className="text-xs"
+          {/* Time Range Dropdown */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">Time Range:</label>
+            <select
+              value={selectedTimeRange}
+              onChange={(e) => handleTimeRangeChange(e.target.value)}
+              className="w-24 px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
             >
-              Single
-            </Button>
-            <Button
-              variant={!singleAxis ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSingleAxis(false)}
-              className="text-xs"
-            >
-              Multiple
-            </Button>
+              <option value="5min">5 min</option>
+              <option value="10min">10 min</option>
+              <option value="30min">30 min</option>
+              <option value="1h">1 hour</option>
+              <option value="8h">8 hours</option>
+              <option value="24h">24 hours</option>
+              <option value="1week">1 week</option>
+            </select>
           </div>
 
           {/* Intervals Count */}
@@ -482,18 +502,15 @@ const Timeseries = () => {
               <option value={10000}>10000</option>
             </select>
           </div>
+
+
         </div>
       </PageHeader>
-      
+
       <div className="bg-card border border-border rounded-lg p-6">
-        <ReactECharts 
-          option={createTimeSeriesOption()}
-          style={{ height: '600px', width: '100%' }}
-          opts={{ 
-            renderer: 'svg',
-            useDirtyRect: false,
-            useCoarsePointer: false
-          }}
+        <HighchartsReact
+          highcharts={Highcharts}
+          options={createHighchartsConfig()}
         />
       </div>
     </div>

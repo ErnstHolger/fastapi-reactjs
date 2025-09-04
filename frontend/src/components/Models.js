@@ -109,6 +109,10 @@ const Models = () => {
         await axios.post('http://127.0.0.1:8008/connect/models', modelData, {
           headers: { 'Content-Type': 'application/json' }
         });
+      } else if (dialogMode === 'edit') {
+        await axios.put('http://127.0.0.1:8008/connect/models', modelData, {
+          headers: { 'Content-Type': 'application/json' }
+        });
       }
       fetchModels();
       setDialogOpen(false);
@@ -144,9 +148,10 @@ const Models = () => {
               <tr>
                 <th className="text-left p-4 font-semibold">Name</th>
                 <th className="text-left p-4 font-semibold">Model Type</th>
-                <th className="text-left p-4 font-semibold">Past Covariates</th>
+                <th className="text-left p-4 font-semibold">Past</th>
                 <th className="text-left p-4 font-semibold">Target</th>
-                <th className="text-left p-4 font-semibold">Future Covariates</th>
+                <th className="text-left p-4 font-semibold">Future</th>
+                <th className="text-left p-4 font-semibold">Status</th>
                 <th className="text-left p-4 font-semibold">Actions</th>
               </tr>
             </thead>
@@ -157,8 +162,8 @@ const Models = () => {
                   <td className="p-4 text-muted-foreground">{model.model_type}</td>
                   <td className="p-4">
                     <CompactListDisplay
-                      items={model.past_covariates}
-                      label="Past Covariates"
+                      items={model.past}
+                      label="Past"
                       color="blue"
                       maxVisible={2}
                     />
@@ -173,9 +178,17 @@ const Models = () => {
                   </td>
                   <td className="p-4">
                     <CompactListDisplay
-                      items={model.future_covariates}
-                      label="Future Covariates"
+                      items={model.future}
+                      label="Future"
                       color="purple"
+                      maxVisible={2}
+                    />
+                  </td>
+                  <td className="p-4">
+                    <CompactListDisplay
+                      items={model.status}
+                      label="Status"
+                      color="orange"
                       maxVisible={2}
                     />
                   </td>
@@ -192,7 +205,7 @@ const Models = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(model.id)}
+                        onClick={() => handleDelete(model.Id || model.id)}
                         className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
                       >
                         <Trash2 size={16} />

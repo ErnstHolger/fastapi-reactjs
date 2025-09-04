@@ -40,16 +40,16 @@ class ModelCreateRequest(BaseModel):
     id: str
     name: str
     description: str
-    sampling_rate: int
+    interval: int
     model_type: str
-    past_covariates: List[str]
+    past: List[str]
     target: List[str]
-    future_covariates: List[str]
+    future: List[str]
     status: List[str]
-    training_horizon: int
-    forecast_horizon: int
-    update_frequency: int
-    retrain_frequency: int
+    lag: int
+    lead: int
+    update: str
+    retrain: str
 
 
 # Initialize FastAPI app
@@ -76,6 +76,19 @@ def _split(value: str):
 
 def sort_list(l: List, key="name"):
     return sorted(l, key=itemgetter(key))
+
+
+def extract_type_fields(data: SdsType) -> Dict:
+    d = {}
+    d["Id"] = data.Id
+    d["Name"] = data.Name
+    d["Description"] = data.Description
+    d["Property"] = ""
+    for property in data.Properties:
+        if property.Name:
+            d["Property"] += ", " + property.Name
+    d["Property"] = str(d["Property"])[2:]
+    return d
 
 
 def extract_simple_fields(data: Dict) -> Dict:
@@ -107,15 +120,15 @@ def extract_model_fields(data: Asset) -> Dict:
         d["name"] = getattr(data, "Name", "")
         d["description"] = getattr(data, "Description", "")
         d["model_type"] = _meta["model_type"].Value
-        d["sampling_rate"] = _meta["sampling_rate"].Value
-        d["past_covariates"] = _split(_meta["past_covariates"].Value)
+        d["interval"] = _meta["interval"].Value
+        d["past"] = _split(_meta["past"].Value)
         d["target"] = _split(_meta["target"].Value)
-        d["future_covariates"] = _split(_meta["future_covariates"].Value)
+        d["future"] = _split(_meta["future"].Value)
         # d["status"] = _meta["status"].Value
-        d["training_horizon"] = _meta["training_horizon"].Value
-        d["forecast_horizon"] = _meta["forecast_horizon"].Value
-        d["update_frequency"] = _meta["update_frequency"].Value
-        d["retrain_frequency"] = _meta["retrain_frequency"].Value
+        d["lag"] = _meta["lag"].Value
+        d["lead"] = _meta["lead"].Value
+        d["update"] = _meta["update"].Value
+        d["retrain"] = _meta["retrain"].Value
         return d
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch models: {str(e)}")
@@ -140,7 +153,7 @@ async def get_types():
     try:
         client = get_adh_client()
         types = client.Types.getTypes(NAMESPACE_ID)
-        return sort_list([extract_simple_fields(i.toDictionary()) for i in types])
+        return sort_list([extract_type_fields(i) for i in types], "Name")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch types: {str(e)}")
 
@@ -202,25 +215,29 @@ async def delete_models(asset_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
 
 
+@app.put("/connect/models", response_model=StatusResponse)
+async def put_models(request: ModelCreateRequest):
+    return await post_models(request)
+
+
 @app.post("/connect/models", response_model=StatusResponse)
 async def post_models(request: ModelCreateRequest):
     logging.info("post /connect/models")
     try:
-        reference_type = create_ml_type()
         create_ml_asset(
             id=request.id,
             name=request.name,
             description=request.description,
             model_type=request.model_type,
-            sampling_rate=request.sampling_rate,
-            past_covariates=request.past_covariates,
+            interval=request.interval,
+            past=request.past,
             target=request.target,
-            future_covariates=request.future_covariates,
+            future=request.future,
             status=request.status,
-            training_horizon=request.training_horizon,
-            forecast_horizon=request.forecast_horizon,
-            update_frequency=request.update_frequency,
-            retrain_frequency=request.retrain_frequency,
+            lag=request.lag,
+            lead=request.lead,
+            update=request.update,
+            retrain=request.retrain,
         )
         return StatusResponse(status="ok")
     except Exception as e:
@@ -251,15 +268,15 @@ async def get_stream_sample_values(
     stream_id: str, start: str, end: str, intervals: int
 ):
     try:
+        logging.info(f"{start} {end} {intervals}")
         client = get_adh_client()
-        values = client.Streams.getSampledValues(
+        values = client.Streams.getRangeValuesInterpolated(
             NAMESPACE_ID,
             stream_id=stream_id,
             value_class=None,
             start=start,
             end=end,
-            sample_by="Value",
-            intervals=intervals,
+            count=intervals,
         )
         return list(values)
     except Exception as e:
@@ -269,7 +286,7 @@ async def get_stream_sample_values(
 
 
 @app.get("/connect/asset_values")
-async def get_asset_values(asset_id: str, start: str, end: str, count: int, stream=[]):
+async def get_asset_values(asset_id: str, start: str, end: str, count: int):
     try:
         client = get_adh_client()
         asset_data = client.Assets.getAssetInterpolatedData(
@@ -278,9 +295,8 @@ async def get_asset_values(asset_id: str, start: str, end: str, count: int, stre
             start_index=start,
             end_index=end,
             count=count,
-            stream=stream,
         )
-        return [item.toDictionary() for item in asset_data]
+        return asset_data.toDictionary()["Results"]
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to fetch asset values: {str(e)}"
